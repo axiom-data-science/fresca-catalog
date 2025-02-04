@@ -1,0 +1,123 @@
+aliases:
+  CRCP_Carbonate_Chemistry_Atlantic: CRCP_Carbonate_Chemistry_Atlantic
+  SFER_data: SFER_data
+data:
+  b1ccd2a531c33b60:
+    datatype: intake.readers.datatypes:CSV
+    kwargs:
+      storage_options: null
+      url: https://files.axds.co/tmp/SFER_data.csv
+    metadata: {}
+    user_parameters: {}
+entries:
+  CRCP_Carbonate_Chemistry_Atlantic:
+    kwargs:
+      cache_kwargs: null
+      constraints: {}
+      dataset_id: CRCP_Carbonate_Chemistry_Atlantic
+      dropna: false
+      mask_failed_qartod: false
+      open_kwargs: {}
+      protocol: tabledap
+      server: https://www.ncei.noaa.gov/erddap
+      variables: null
+    metadata:
+      datasetID: CRCP_Carbonate_Chemistry_Atlantic
+      griddap: ''
+      info_url: https://www.ncei.noaa.gov/erddap/info/CRCP_Carbonate_Chemistry_Atlantic/index.csv
+      institution: Coral Reef Conservation Program
+      maxLatitude: 27.92243
+      maxLongitude: -64.47317
+      maxTime: '2022-12-18T15:53:00Z'
+      minLatitude: 17.63673
+      minLongitude: -93.823
+      minTime: '2010-03-08T12:26:00Z'
+      summary: CRCP_Carbonate_Chemistry_Atlantic
+      tabledap: https://www.ncei.noaa.gov/erddap/tabledap/CRCP_Carbonate_Chemistry_Atlantic
+      title: CRCP_Carbonate_Chemistry_Atlantic
+      variables:
+      - time
+      - latitude
+      - longitude
+      - CTDID
+      - Region
+      - Year
+      - Mission
+      - Location
+      - UTCDate
+      - UTCTime
+      - Date_UTC
+      - Sample_Depth_m
+      - DIC_UMOL_KG
+      - TALK_UMOL_KG
+      - pH_measured
+      - pH_calculated
+      - pCO2
+      - Aragonite_Sat
+      - Salinity_Bottle
+      - Temperature_C
+      - Pressure_db
+      - SiteID
+      - Survey_design
+      - Sample_frequency
+      - accession_url
+    output_instance: pandas:DataFrame
+    reader: intake_erddap.erddap:TableDAPReader
+    user_parameters: {}
+  SFER_data:
+    kwargs:
+      args:
+      - '{data(b1ccd2a531c33b60)}'
+    metadata:
+      maxLatitude: 28.7841
+      maxLongitude: 85.0221
+      maxTime: '2024-11-17T23:54:00Z'
+      minLatitude: 24.3952
+      minLongitude: 80.0442
+      minTime: '2014-12-01T13:23:00Z'
+      variables:
+      - keyfield
+      - cruise_id
+      - year
+      - month
+      - day
+      - time
+      - datetime
+      - lat_deg
+      - lat_min
+      - lat_dec
+      - lon_deg
+      - lon_min
+      - lon_dec
+      - station
+      - station_type
+      - depth
+      - depth_class
+      - depth_order
+      - cast
+      - nisk_start
+      - nisk_end
+      - net_tow_500
+      - net_tow_200
+      - net_tow_64
+      - plank_image
+      - insitu_rrs
+      - temp
+      - sal
+      - o2_ctd
+      - o2_disc
+      - nh4
+      - no2
+      - no3
+      - no3_no2
+      - po4
+      - si
+      - avg_chl_a
+      - avg_phaeo
+      - notes
+    output_instance: pandas:DataFrame
+    reader: intake.readers.readers:PandasCSV
+    user_parameters: {}
+metadata: {}
+user_parameters: {}
+version: 2

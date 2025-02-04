@@ -1,0 +1,15 @@
+name: fresca
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - hvplot
+  - intake
+  - jupyterlab
+  - panel
+  - pip
+  - rapidfuzz
+  - shapely
+  - pip:
+    - cf-pandas
+    - intake-erddap
