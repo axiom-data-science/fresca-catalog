@@ -1,15 +1,20 @@
 name: fresca
 channels:
-  - defaults
   - conda-forge
 dependencies:
+  - contextily
+  - gdal
+  - geopandas
   - hvplot
   - intake
   - jupyterlab
   - panel
   - pip
+  - python=3.10
   - rapidfuzz
+  - rasterio
   - shapely
+  - sqlite
   - pip:
     - cf-pandas
     - intake-erddap

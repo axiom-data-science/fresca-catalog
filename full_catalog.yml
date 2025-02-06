@@ -69,12 +69,15 @@ entries:
       args:
       - '{data(b1ccd2a531c33b60)}'
     metadata:
+      lat_col: lat_dec
+      lon_col: lon_dec
       maxLatitude: 28.7841
       maxLongitude: 85.0221
       maxTime: '2024-11-17T23:54:00Z'
       minLatitude: 24.3952
       minLongitude: 80.0442
       minTime: '2014-12-01T13:23:00Z'
+      time_col: datetime
       variables:
       - keyfield
       - cruise_id
