@@ -1,8 +1,10 @@
-- dataset_id: CRCP_Carbonate_Chemistry_Atlantic
-  server_url: https://www.ncei.noaa.gov/erddap
-  type: erddap
+- lat_col: latitude
+  lon_col: longitude
+  time_col: date
+  type: csv
+  url: datasets/all_ctd.csv
 - lat_col: lat_dec
   lon_col: lon_dec
-  time_col: datetime
+  time_col: date
   type: csv
-  url: https://files.axds.co/tmp/SFER_data.csv
+  url: datasets/sfer.csv

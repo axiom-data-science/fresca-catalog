@@ -1,5 +1,6 @@
 """Builds a full Intake catalog from a base catalog file."""
 import argparse
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Union
@@ -7,12 +8,14 @@ import yaml
 
 import contextily as ctx
 import geopandas as gpd
+import h3
 from intake import Catalog
 from intake.readers import CSV, PandasCSV
 from intake_erddap import ERDDAPCatalogReader, TableDAPReader
 import matplotlib.pyplot as plt
+from matplotlib import colors
 import pandas as pd
-from shapely.geometry import box
+from shapely.geometry import box, Polygon
 from rapidfuzz import fuzz, process
 
 def get_erddap_dataset_variables(server_url: str, dataset_id: str) -> List[str]:
@@ -79,10 +82,10 @@ def extract_csv_metadata(url: str, time_col: str, lat_col: str, lon_col: str) ->
     metadata = {
         'minTime': df[time_col].min().isoformat() + 'Z',
         'maxTime': df[time_col].max().isoformat() + 'Z',
-        'minLatitude': df[lat_col].min(),
-        'maxLatitude': df[lat_col].max(),
-        'minLongitude': df[lon_col].min(),
-        'maxLongitude': df[lon_col].max(),
+        'minLatitude': float(df[lat_col].min()),
+        'maxLatitude': float(df[lat_col].max()),
+        'minLongitude': float(df[lon_col].min()),
+        'maxLongitude': float(df[lon_col].max()),
         'variables': list(df.columns),
         'time_col': time_col,
         'lat_col': lat_col,
@@ -303,6 +306,103 @@ def filter_catalog(
     
     return filtered_catalog
 
+def map_datasets(
+    catalog: Catalog,
+    variables: List[str] = None,
+    log: bool = False,
+    hex: bool = False
+):
+    """Maps datasets in the catalog.
+
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog containing the datasets to map.
+    variables : list
+        The variables map.
+    log : bool
+        Whether or not to log normalize counts. Defaults to False.
+    hex : bool
+        Whether or not to aggregate observations into hexes. Defaults to True.
+    """
+    norm = colors.LogNorm() if log else None
+    if variables:
+        column = 'total'
+        cmap = 'viridis'
+        alpha = 1.0
+    else:
+        column = 'dataset'
+        cmap = 'Set1'
+        alpha = 0.5
+
+    entry_names = list(catalog.entries.keys())
+    gdfs = []
+
+    base_cols= ['cruise_id', 'station', 'geometry']
+
+    for entry_name in entry_names:
+        df = catalog[entry_name].read()
+
+        # Handle CSV lat/lon columns
+        if all(c in catalog[entry_name].metadata for c in ['lon_col', 'lat_col']):
+            lon_col = catalog[entry_name].metadata['lon_col']
+            lat_col = catalog[entry_name].metadata['lat_col']
+        # Handle ERDDAP lat/lon columns (which have the unit appended)
+        else:
+            lon_col = next(c for c in df.columns if 'longitude' in c)
+            lat_col = next(c for c in df.columns if 'latitude' in c)
+        
+        cols_to_keep = deepcopy(base_cols)
+        if variables:
+            for v in variables:
+                if v in df.columns:
+                    cols_to_keep.append(v)
+        else:
+            df['dataset'] = entry_name
+            cols_to_keep.append('dataset')
+
+        gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon_col], df[lat_col]))
+        gdf = gdf[cols_to_keep]
+        gdf = gdf.set_crs(epsg=4326)
+        gdf = gdf.to_crs(epsg=3857)
+        gdfs.append(gdf)
+
+    combined_gdf = pd.concat(gdfs, ignore_index=True)
+
+    if variables:
+        combined_gdf['total'] = combined_gdf[variables].sum(axis=1)
+        combined_gdf = combined_gdf.drop(columns=variables)
+        agg_gdf = combined_gdf.groupby(base_cols).sum().reset_index()
+        agg_gdf = agg_gdf[agg_gdf['total'] > 0]
+        agg_gdf = gpd.GeoDataFrame(agg_gdf)
+        agg_gdf = agg_gdf[agg_gdf.geometry.is_valid & ~agg_gdf.geometry.is_empty]
+    else:
+        agg_gdf = combined_gdf
+
+    if variables and hex:
+        agg_gdf = agg_gdf.to_crs(epsg=4326)
+        agg_gdf['h3_index'] = agg_gdf.geometry.apply(lambda geom: h3.latlng_to_cell(geom.y, geom.x, 5))
+        agg_gdf = agg_gdf.groupby('h3_index')['total'].mean().reset_index()
+        agg_gdf['geometry'] = agg_gdf['h3_index'].apply(lambda h: Polygon([(lng, lat) for lat, lng in h3.cell_to_boundary(h)]))
+        agg_gdf = gpd.GeoDataFrame(agg_gdf, geometry='geometry', crs='EPSG:4326')
+        agg_gdf = agg_gdf.to_crs(epsg=3857)
+
+    ax = agg_gdf.plot(
+        column=column,
+        legend=True,
+        cmap=cmap,
+        figsize=(12, 12),
+        norm=norm,
+        alpha=alpha
+    )
+    ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+
+    plt.show()
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Manage the FRESCA catalog.')
     subparsers = parser.add_subparsers(dest='command', help='Subcommands')
@@ -317,44 +417,3 @@ if __name__ == '__main__':
         build_catalog(args.input_file, args.output_file)
     else:
         parser.print_help()
-
-def map_datasets(catalog):
-    """Maps datasets in the catalog.
-
-    Parameters
-    ----------
-    catalog : Catalog
-        The catalog containing the datasets to map.
-    """
-    entry_names = list(catalog.entries.keys())
-    gdfs = []
-
-    for entry_name in entry_names:
-        df = catalog[entry_name].read()
-        df['dataset'] = entry_name
-
-        # Handle CSV lat/lon columns
-        if all(c in catalog[entry_name].metadata for c in ['lon_col', 'lat_col']):
-            lon_col = catalog[entry_name].metadata['lon_col']
-            lat_col = catalog[entry_name].metadata['lat_col']
-        # Handle ERDDAP lat/lon columns (which have the unit appended)
-        else:
-            lon_col = next(c for c in df.columns if 'longitude' in c)
-            lat_col = next(c for c in df.columns if 'latitude' in c)
-
-        gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon_col], df[lat_col]))
-        gdf = gdf[['dataset', 'geometry']]
-        gdf = gdf.set_crs(epsg=4326)
-        gdf = gdf.to_crs(epsg=3857)
-        gdfs.append(gdf)
-
-    combined_gdf = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
-
-    ax = combined_gdf.plot(column='dataset', legend=True, cmap='Set1', markersize=50, figsize=(12, 12))
-    ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xlabel('')
-    ax.set_ylabel('')
-
-    plt.show()
