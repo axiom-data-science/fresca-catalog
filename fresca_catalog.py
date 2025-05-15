@@ -9,14 +9,18 @@ import yaml
 import contextily as ctx
 import geopandas as gpd
 import h3
+import hvplot.pandas
 from intake import Catalog
 from intake.readers import CSV, PandasCSV
 from intake_erddap import ERDDAPCatalogReader, TableDAPReader
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import pandas as pd
-from shapely.geometry import box, Polygon
+from shapely.geometry import box, Polygon, Point
 from rapidfuzz import fuzz, process
+
+import holoviews as hv
+hv.extension('bokeh')
 
 def get_erddap_dataset_variables(server_url: str, dataset_id: str) -> List[str]:
     """Gets the list of variables in an ERDDAP dataset.
@@ -325,7 +329,6 @@ def map_datasets(
     hex : bool
         Whether or not to aggregate observations into hexes. Defaults to True.
     """
-    norm = colors.LogNorm() if log else None
     if variables:
         column = 'total'
         cmap = 'viridis'
@@ -361,10 +364,18 @@ def map_datasets(
             df['dataset'] = entry_name
             cols_to_keep.append('dataset')
 
-        gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon_col], df[lat_col]))
+        # Collapse points down to per-station centroid
+        centroids = (
+            df.groupby('station')[[lon_col, lat_col]]
+            .mean()
+            .apply(lambda row: Point(row[lon_col], row[lat_col]), axis=1)
+        )
+        df['geometry'] = df['station'].map(centroids)
+
+        gdf = gpd.GeoDataFrame(df)
         gdf = gdf[cols_to_keep]
         gdf = gdf.set_crs(epsg=4326)
-        gdf = gdf.to_crs(epsg=3857)
+        # gdf = gdf.to_crs(epsg=3857)
         gdfs.append(gdf)
 
     combined_gdf = pd.concat(gdfs, ignore_index=True)
@@ -372,7 +383,7 @@ def map_datasets(
     if variables:
         combined_gdf['total'] = combined_gdf[variables].sum(axis=1)
         combined_gdf = combined_gdf.drop(columns=variables)
-        agg_gdf = combined_gdf.groupby(base_cols).sum().reset_index()
+        agg_gdf = agg_gdf.groupby(base_cols).sum().reset_index()
         agg_gdf = agg_gdf[agg_gdf['total'] > 0]
         agg_gdf = gpd.GeoDataFrame(agg_gdf)
         agg_gdf = agg_gdf[agg_gdf.geometry.is_valid & ~agg_gdf.geometry.is_empty]
@@ -380,28 +391,61 @@ def map_datasets(
         agg_gdf = combined_gdf
 
     if variables and hex:
-        agg_gdf = agg_gdf.to_crs(epsg=4326)
+        # agg_gdf = agg_gdf.to_crs(epsg=4326)
         agg_gdf['h3_index'] = agg_gdf.geometry.apply(lambda geom: h3.latlng_to_cell(geom.y, geom.x, 5))
         agg_gdf = agg_gdf.groupby('h3_index')['total'].mean().reset_index()
         agg_gdf['geometry'] = agg_gdf['h3_index'].apply(lambda h: Polygon([(lng, lat) for lat, lng in h3.cell_to_boundary(h)]))
+        # agg_gdf['geometry'] = agg_gdf['h3_index'].apply(
+        #     lambda h: Polygon([(lng, lat) for lat, lng in h3.cell_to_boundary(h)])
+        # )
+        # agg_gdf = gpd.GeoDataFrame(agg_gdf[['h3_index', 'total', 'geometry']], geometry='geometry', crs='EPSG:4326')
         agg_gdf = gpd.GeoDataFrame(agg_gdf, geometry='geometry', crs='EPSG:4326')
-        agg_gdf = agg_gdf.to_crs(epsg=3857)
+        # agg_gdf = agg_gdf.to_crs(epsg=3857)
 
-    ax = agg_gdf.plot(
-        column=column,
-        legend=True,
-        cmap=cmap,
-        figsize=(12, 12),
-        norm=norm,
-        alpha=alpha
-    )
-    ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xlabel('')
-    ax.set_ylabel('')
 
-    plt.show()
+
+    # ax = agg_gdf.plot(
+    #     column=column,
+    #     legend=True,
+    #     cmap=cmap,
+    #     figsize=(12, 12),
+    #     norm=norm,
+    #     alpha=alpha
+    # )
+    # ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik)
+    # ax.set_xticks([])
+    # ax.set_yticks([])
+    # ax.set_xlabel('')
+    # ax.set_ylabel('')
+
+    # plt.show()
+
+    agg_gdf = agg_gdf[agg_gdf.geometry.notnull()].copy()
+    agg_gdf = agg_gdf[agg_gdf.geometry.apply(lambda g: g.is_valid if g else False)]
+    agg_gdf = agg_gdf.reset_index(drop=True)
+    if hex:
+        plot = agg_gdf.hvplot.polygons(
+            c=column,
+            cmap=cmap,
+            logz=log,
+            geo=True,
+            tiles='OSM',
+            width=800,
+            height=600
+        )
+    else:
+        plot = agg_gdf.hvplot.points(
+            c=column,
+            cmap=cmap,
+            logz=log,
+            geo=True,
+            tiles='OSM',
+            # hover_cols=['cruise_id', 'station'],
+            width=800,
+            height=600
+        )
+    from IPython.display import display
+    display(plot)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Manage the FRESCA catalog.')

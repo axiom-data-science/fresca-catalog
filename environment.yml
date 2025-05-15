@@ -5,6 +5,7 @@ dependencies:
   - contextily
   - gdal
   - geopandas
+  - geoviews
   - h3-py
   - hvplot
   - intake
