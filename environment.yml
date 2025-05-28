@@ -15,6 +15,7 @@ dependencies:
   - python=3.10
   - rapidfuzz
   - rasterio
+  - seaborn
   - shapely
   - sqlite
   - pip:

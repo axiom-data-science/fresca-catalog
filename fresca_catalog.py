@@ -16,6 +16,7 @@ from intake_erddap import ERDDAPCatalogReader, TableDAPReader
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import pandas as pd
+import seaborn as sns
 from shapely.geometry import box, Polygon, Point
 from rapidfuzz import fuzz, process
 
@@ -266,6 +267,7 @@ def filter_catalog(
         The filtered catalog.
     """
     filtered_catalog = Catalog()
+    filtered_catalog.metadata['time_range'] = time_range
 
     if not entry_names:
         entry_names = catalog.entries.keys()
@@ -310,11 +312,92 @@ def filter_catalog(
     
     return filtered_catalog
 
-def map_datasets(
+def build_agg_table(
+        catalog: Catalog,
+        variables: List[str] = None
+    ) -> pd.DataFrame:
+
+    base_cols = ['date', 'cruise_id', 'station', 'event_n', 'latitude', 'longitude']
+    entry_names = list(catalog.entries.keys())
+    dfs = []
+    for entry_name in entry_names:
+        df = catalog[entry_name].read()
+
+        cols_to_keep = deepcopy(base_cols)
+
+        # Handle CSV lat/lon columns
+        if all(c in catalog[entry_name].metadata for c in ['lon_col', 'lat_col']):
+            lon_col = catalog[entry_name].metadata['lon_col']
+            lat_col = catalog[entry_name].metadata['lat_col']
+        # Handle ERDDAP lat/lon columns (which have the unit appended)
+        else:
+            lon_col = next(c for c in df.columns if 'longitude' in c)
+            lat_col = next(c for c in df.columns if 'latitude' in c)
+        
+        # Rename lat/lon columns to standard names
+        df = df.rename(columns={lon_col: 'longitude', lat_col: 'latitude'})
+        lon_col = 'longitude'
+        lat_col = 'latitude'
+
+        if variables is None:
+            cols_to_keep.extend(df.select_dtypes(include='int').columns)
+        else:
+            for v in variables:
+                if v in df.columns:
+                    cols_to_keep.append(v)
+        cols_to_keep = list(set(cols_to_keep))
+        df = df[cols_to_keep]
+
+        df = df.reset_index(drop=True)
+        dfs.append(df)
+
+    df = pd.concat(dfs).fillna(0)
+
+    df['date'] = pd.to_datetime(df['date'])
+
+    if hasattr(catalog.metadata, 'time_range'):
+        start, end = catalog.metadata['time_range']
+    else:
+        start, end = df['date'].min(), df['date'].max()
+
+    df = df[df['date'].between(start, end)]
+
+    var_cols = df.columns.difference(base_cols)
+    df[var_cols] = (df[var_cols] > 0).astype(int)
+
+    # Collapse points down to per-station centroid
+    centroids = (
+        df.groupby('station')[[lon_col, lat_col]]
+        .mean()
+        .apply(lambda row: Point(row[lon_col], row[lat_col]), axis=1)
+    )
+    df.drop(columns=[lon_col, lat_col], inplace=True)
+
+    # Aggregate duplicate station visits per date
+    df = df.groupby(['station', 'date']).sum(numeric_only=True).reset_index()
+
+    date_range = pd.date_range(start, end)
+    stations = df['station'].unique()
+
+    full_index = pd.MultiIndex.from_product([stations, date_range], names=['station', 'date'])
+    df = df.set_index(['station', 'date'])
+    df = df.reindex(full_index, fill_value=0).reset_index()
+    df['event_n'] = 1
+        
+    df['geometry'] = df['station'].map(centroids)
+    gdf = gpd.GeoDataFrame(df)
+    gdf = gdf.set_crs(epsg=4326)
+    gdf = gdf[gdf.geometry.notnull()].copy()
+    gdf = gdf[gdf.geometry.apply(lambda g: g.is_valid if g else False)]
+
+    return gdf
+
+
+def plot_map(
     catalog: Catalog,
     variables: List[str] = None,
     log: bool = False,
-    hex: bool = False
+    time_bin: str = "D"
 ):
     """Maps datasets in the catalog.
 
@@ -329,123 +412,168 @@ def map_datasets(
     hex : bool
         Whether or not to aggregate observations into hexes. Defaults to True.
     """
-    if variables:
-        column = 'total'
-        cmap = 'viridis'
-        alpha = 1.0
-    else:
-        column = 'dataset'
-        cmap = 'Set1'
-        alpha = 0.5
+    base_cols= ['date', 'station', 'event_n', 'geometry']
 
-    entry_names = list(catalog.entries.keys())
-    gdfs = []
+    if not hasattr(catalog, 'agg_table'):
+        catalog.agg_table = build_agg_table(catalog, variables)
+    
+    agg_table = deepcopy(catalog.agg_table)
+    
+    if time_bin != "D":
+        agg_table = agg_table.set_index('date')
+        agg_table = agg_table.groupby(['station', 'geometry']).resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
+        var_cols = agg_table.columns.difference(base_cols)
+        agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
+        agg_table['event_n'] = 1
 
-    base_cols= ['cruise_id', 'station', 'geometry']
+    # Divide all non-base columns by the value in the event_n column and then drop the event_n column
+    for col in agg_table.columns:
+        if col not in base_cols and agg_table[col].dtype in ['int64', 'float64']:
+            agg_table[col] = agg_table[col] / agg_table['event_n']
+    agg_table.drop(columns=['event_n'], inplace=True)
 
-    for entry_name in entry_names:
-        df = catalog[entry_name].read()
+    agg_table = agg_table.groupby(['station', 'geometry']).mean(numeric_only=True).reset_index()
+    agg_table['completeness'] = agg_table.mean(numeric_only=True, axis=1)
+    agg_table = gpd.GeoDataFrame(agg_table)
+    agg_table = agg_table.set_crs(epsg=4326)
+    agg_table = agg_table[['station', 'geometry', 'completeness']]
 
-        # Handle CSV lat/lon columns
-        if all(c in catalog[entry_name].metadata for c in ['lon_col', 'lat_col']):
-            lon_col = catalog[entry_name].metadata['lon_col']
-            lat_col = catalog[entry_name].metadata['lat_col']
-        # Handle ERDDAP lat/lon columns (which have the unit appended)
-        else:
-            lon_col = next(c for c in df.columns if 'longitude' in c)
-            lat_col = next(c for c in df.columns if 'latitude' in c)
-        
-        cols_to_keep = deepcopy(base_cols)
-        if variables:
-            for v in variables:
-                if v in df.columns:
-                    cols_to_keep.append(v)
-        else:
-            df['dataset'] = entry_name
-            cols_to_keep.append('dataset')
-
-        # Collapse points down to per-station centroid
-        centroids = (
-            df.groupby('station')[[lon_col, lat_col]]
-            .mean()
-            .apply(lambda row: Point(row[lon_col], row[lat_col]), axis=1)
-        )
-        df['geometry'] = df['station'].map(centroids)
-
-        gdf = gpd.GeoDataFrame(df)
-        gdf = gdf[cols_to_keep]
-        gdf = gdf.set_crs(epsg=4326)
-        # gdf = gdf.to_crs(epsg=3857)
-        gdfs.append(gdf)
-
-    combined_gdf = pd.concat(gdfs, ignore_index=True)
-
-    if variables:
-        combined_gdf['total'] = combined_gdf[variables].sum(axis=1)
-        combined_gdf = combined_gdf.drop(columns=variables)
-        agg_gdf = agg_gdf.groupby(base_cols).sum().reset_index()
-        agg_gdf = agg_gdf[agg_gdf['total'] > 0]
-        agg_gdf = gpd.GeoDataFrame(agg_gdf)
-        agg_gdf = agg_gdf[agg_gdf.geometry.is_valid & ~agg_gdf.geometry.is_empty]
-    else:
-        agg_gdf = combined_gdf
-
-    if variables and hex:
-        # agg_gdf = agg_gdf.to_crs(epsg=4326)
-        agg_gdf['h3_index'] = agg_gdf.geometry.apply(lambda geom: h3.latlng_to_cell(geom.y, geom.x, 5))
-        agg_gdf = agg_gdf.groupby('h3_index')['total'].mean().reset_index()
-        agg_gdf['geometry'] = agg_gdf['h3_index'].apply(lambda h: Polygon([(lng, lat) for lat, lng in h3.cell_to_boundary(h)]))
-        # agg_gdf['geometry'] = agg_gdf['h3_index'].apply(
-        #     lambda h: Polygon([(lng, lat) for lat, lng in h3.cell_to_boundary(h)])
-        # )
-        # agg_gdf = gpd.GeoDataFrame(agg_gdf[['h3_index', 'total', 'geometry']], geometry='geometry', crs='EPSG:4326')
-        agg_gdf = gpd.GeoDataFrame(agg_gdf, geometry='geometry', crs='EPSG:4326')
-        # agg_gdf = agg_gdf.to_crs(epsg=3857)
-
-
-
-    # ax = agg_gdf.plot(
-    #     column=column,
-    #     legend=True,
-    #     cmap=cmap,
-    #     figsize=(12, 12),
-    #     norm=norm,
-    #     alpha=alpha
-    # )
-    # ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik)
-    # ax.set_xticks([])
-    # ax.set_yticks([])
-    # ax.set_xlabel('')
-    # ax.set_ylabel('')
-
-    # plt.show()
-
-    agg_gdf = agg_gdf[agg_gdf.geometry.notnull()].copy()
-    agg_gdf = agg_gdf[agg_gdf.geometry.apply(lambda g: g.is_valid if g else False)]
-    agg_gdf = agg_gdf.reset_index(drop=True)
-    if hex:
-        plot = agg_gdf.hvplot.polygons(
-            c=column,
-            cmap=cmap,
-            logz=log,
-            geo=True,
-            tiles='OSM',
-            width=800,
-            height=600
-        )
-    else:
-        plot = agg_gdf.hvplot.points(
-            c=column,
-            cmap=cmap,
-            logz=log,
-            geo=True,
-            tiles='OSM',
-            # hover_cols=['cruise_id', 'station'],
-            width=800,
-            height=600
-        )
+    plot = agg_table.hvplot.points(
+        c='completeness',
+        cmap='viridis',
+        logz=log,
+        geo=True,
+        tiles='OSM',
+        hover_cols=['station', 'completeness'],
+        width=800,
+        height=600
+    )
     from IPython.display import display
     display(plot)
+
+def plot_grid(
+    catalog: Catalog,
+    variables: List[str] = None,
+    log: bool = False,
+    time_bin: str = "D"
+):
+    """Maps datasets in the catalog.
+
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog containing the datasets to map.
+    variables : list
+        The variables map.
+    log : bool
+        Whether or not to log normalize counts. Defaults to False.
+    hex : bool
+        Whether or not to aggregate observations into hexes. Defaults to True.
+    """
+    base_cols= ['date', 'station', 'event_n']
+
+    if not hasattr(catalog, 'agg_table'):
+        catalog.agg_table = build_agg_table(catalog, variables)
+    
+    agg_table = deepcopy(catalog.agg_table)
+    agg_table.drop(columns=['geometry'], inplace=True)
+    
+    if time_bin != "D":
+        agg_table = agg_table.set_index('date')
+        agg_table = agg_table.groupby('station').resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
+        var_cols = agg_table.columns.difference(base_cols)
+        agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
+        agg_table['event_n'] = 1
+
+    # Divide all non-base columns by the value in the event_n column and then drop the event_n column
+    for col in agg_table.columns:
+        if col not in base_cols and agg_table[col].dtype in ['int64', 'float64']:
+            agg_table[col] = agg_table[col] / agg_table['event_n']
+    agg_table.drop(columns=['event_n'], inplace=True)
+
+    agg_table = agg_table.groupby('station').mean(numeric_only=True).reset_index()
+    agg_table = agg_table.set_index('station')
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 60))
+    plt.yticks(ticks=range(agg_table.shape[0]), labels=agg_table.index, rotation=0)
+    sns.heatmap(agg_table, cmap='viridis')
+    plt.show()
+
+def plot_ts(
+    catalog: Catalog,
+    stations: List[str] = None,
+    variables: List[str] = None,
+    log: bool = False,
+    time_bin: str = "D"
+):
+    """Maps datasets in the catalog.
+
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog containing the datasets to map.
+    variables : list
+        The variables map.
+    log : bool
+        Whether or not to log normalize counts. Defaults to False.
+    hex : bool
+        Whether or not to aggregate observations into hexes. Defaults to True.
+    """
+    base_cols= ['date', 'station', 'event_n']
+
+    if not hasattr(catalog, 'agg_table'):
+        catalog.agg_table = build_agg_table(catalog, variables)
+    
+    agg_table = deepcopy(catalog.agg_table)
+    agg_table.drop(columns=['geometry'], inplace=True)
+
+    if stations:
+        if isinstance(stations, str):
+            stations = [stations]
+        agg_table = agg_table[agg_table['station'].isin(stations)]
+    else:
+        stations = agg_table['station'].unique().tolist()
+    
+    if time_bin != "D":
+        agg_table = agg_table.set_index('date')
+        agg_table = agg_table.groupby('station').resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
+        var_cols = agg_table.columns.difference(base_cols)
+        agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
+        agg_table['event_n'] = 1
+
+    # Divide all non-base columns by the value in the event_n column and then drop the event_n column
+    for col in agg_table.columns:
+        if col not in base_cols and agg_table[col].dtype in ['int64', 'float64']:
+            agg_table[col] = agg_table[col] / agg_table['event_n']
+    agg_table.drop(columns=['event_n'], inplace=True)
+
+    if len(stations) > 1:
+        # mean variable values per station date
+        # agg_table = agg_table.groupby(['station', 'date']).mean(numeric_only=True).reset_index()
+        agg_table['completeness'] = agg_table.mean(numeric_only=True, axis=1)
+        # pivot so date is index and station is columns
+        agg_table = agg_table[['date', 'station', 'completeness']].pivot(index='date', columns='station')
+        agg_table.columns = agg_table.columns.droplevel(0)
+        agg_table.columns.name = None
+
+    else:
+        # drop station
+        agg_table = agg_table.drop(columns=['station'])
+        # set date as index
+        agg_table = agg_table.set_index('date')
+        # leave variables as columns
+
+    import matplotlib.pyplot as plt
+    agg_table.plot(kind='bar', stacked=True, logy=log, figsize=(15, 6), width=1.0)
+    plt.xticks(ticks=range(len(agg_table)), labels=agg_table.index.strftime('%Y-%m'), rotation=45)
+    plt.tight_layout()
+    plt.show()
+    # plt.figure(figsize=(10,6))
+    # plt.stackplot(agg_table.index, agg_table.T, labels=agg_table.columns, alpha=1)
+    # plt.legend(title='Stations')
+    # plt.xlabel('Date')
+    # plt.ylabel('Counts')
+    # plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Manage the FRESCA catalog.')
