@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import pandas as pd
 import seaborn as sns
+from matplotlib.colors import LogNorm
 from shapely.geometry import box, Polygon, Point
 from rapidfuzz import fuzz, process
 
@@ -276,12 +277,18 @@ def filter_catalog(
 
     if variables and entry_names:
         matching_entry_names = set()
+        matching_variables = set()
         for entry_name in entry_names:
             entry_variables = catalog[entry_name].metadata['variables']
             common_variables = set(variables).intersection(set(entry_variables))
             if common_variables:
                 matching_entry_names.add(entry_name)
+                matching_variables.update(common_variables)
         entry_names.intersection_update(matching_entry_names)
+    else:
+        matching_variables = set(get_all_catalog_variables(catalog))
+    
+    filtered_catalog.metadata['variables'] = list(matching_variables)
 
     if time_range and entry_names:
         matching_entry_names = set()
@@ -312,10 +319,7 @@ def filter_catalog(
     
     return filtered_catalog
 
-def build_agg_table(
-        catalog: Catalog,
-        variables: List[str] = None
-    ) -> pd.DataFrame:
+def build_agg_table( catalog: Catalog) -> pd.DataFrame:
 
     base_cols = ['date', 'cruise_id', 'station', 'event_n', 'latitude', 'longitude']
     entry_names = list(catalog.entries.keys())
@@ -339,12 +343,9 @@ def build_agg_table(
         lon_col = 'longitude'
         lat_col = 'latitude'
 
-        if variables is None:
-            cols_to_keep.extend(df.select_dtypes(include='int').columns)
-        else:
-            for v in variables:
-                if v in df.columns:
-                    cols_to_keep.append(v)
+        for v in catalog.metadata['variables']:
+            if v in df.columns:
+                cols_to_keep.append(v)
         cols_to_keep = list(set(cols_to_keep))
         df = df[cols_to_keep]
 
@@ -355,8 +356,8 @@ def build_agg_table(
 
     df['date'] = pd.to_datetime(df['date'])
 
-    if hasattr(catalog.metadata, 'time_range'):
-        start, end = catalog.metadata['time_range']
+    if 'time_range' in catalog.metadata:
+        start, end = tuple(pd.to_datetime(d).tz_localize(None) for d in catalog.metadata['time_range'])
     else:
         start, end = df['date'].min(), df['date'].max()
 
@@ -395,9 +396,8 @@ def build_agg_table(
 
 def plot_map(
     catalog: Catalog,
-    variables: List[str] = None,
-    log: bool = False,
-    time_bin: str = "D"
+    time_bin: str = "D",
+    log: bool = False
 ):
     """Maps datasets in the catalog.
 
@@ -415,10 +415,10 @@ def plot_map(
     base_cols= ['date', 'station', 'event_n', 'geometry']
 
     if not hasattr(catalog, 'agg_table'):
-        catalog.agg_table = build_agg_table(catalog, variables)
+        catalog.agg_table = build_agg_table(catalog)
     
     agg_table = deepcopy(catalog.agg_table)
-    
+
     if time_bin != "D":
         agg_table = agg_table.set_index('date')
         agg_table = agg_table.groupby(['station', 'geometry']).resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
@@ -453,7 +453,7 @@ def plot_map(
 
 def plot_grid(
     catalog: Catalog,
-    variables: List[str] = None,
+    stations: List[str] = None,
     log: bool = False,
     time_bin: str = "D"
 ):
@@ -470,6 +470,11 @@ def plot_grid(
     hex : bool
         Whether or not to aggregate observations into hexes. Defaults to True.
     """
+    if log:
+        norm = LogNorm()
+    else:
+        norm = None
+    
     base_cols= ['date', 'station', 'event_n']
 
     if not hasattr(catalog, 'agg_table'):
@@ -477,6 +482,23 @@ def plot_grid(
     
     agg_table = deepcopy(catalog.agg_table)
     agg_table.drop(columns=['geometry'], inplace=True)
+    
+    if stations:
+        if isinstance(stations, str):
+            stations = [stations]
+        agg_table = agg_table[agg_table['station'].isin(stations)]
+    
+
+    if stations:
+        if isinstance(stations, str):
+            stations = [stations]
+        agg_table = agg_table[agg_table['station'].isin(stations)]
+    
+
+    if stations:
+        if isinstance(stations, str):
+            stations = [stations]
+        agg_table = agg_table[agg_table['station'].isin(stations)]
     
     if time_bin != "D":
         agg_table = agg_table.set_index('date')
@@ -494,12 +516,12 @@ def plot_grid(
     agg_table = agg_table.groupby('station').mean(numeric_only=True).reset_index()
     agg_table = agg_table.set_index('station')
     import matplotlib.pyplot as plt
-    plt.figure(figsize=(10, 60))
+    # plt.figure(figsize=(10, 60))
     plt.yticks(ticks=range(agg_table.shape[0]), labels=agg_table.index, rotation=0)
-    sns.heatmap(agg_table, cmap='viridis')
+    sns.heatmap(agg_table, cmap='viridis', norm=norm)
     plt.show()
 
-def plot_ts(
+def plot_timeseries(
     catalog: Catalog,
     stations: List[str] = None,
     variables: List[str] = None,
@@ -548,32 +570,25 @@ def plot_ts(
     agg_table.drop(columns=['event_n'], inplace=True)
 
     if len(stations) > 1:
-        # mean variable values per station date
-        # agg_table = agg_table.groupby(['station', 'date']).mean(numeric_only=True).reset_index()
         agg_table['completeness'] = agg_table.mean(numeric_only=True, axis=1)
-        # pivot so date is index and station is columns
+        agg_table['completeness'] /= len(stations)
         agg_table = agg_table[['date', 'station', 'completeness']].pivot(index='date', columns='station')
         agg_table.columns = agg_table.columns.droplevel(0)
         agg_table.columns.name = None
 
     else:
-        # drop station
         agg_table = agg_table.drop(columns=['station'])
-        # set date as index
         agg_table = agg_table.set_index('date')
-        # leave variables as columns
+        for col in agg_table.columns:
+            agg_table[col] = agg_table[col] / len(agg_table.columns)
 
     import matplotlib.pyplot as plt
-    agg_table.plot(kind='bar', stacked=True, logy=log, figsize=(15, 6), width=1.0)
-    plt.xticks(ticks=range(len(agg_table)), labels=agg_table.index.strftime('%Y-%m'), rotation=45)
+    ax = agg_table.plot(kind='bar', stacked=True, logy=log, width=1.0)
+    xticks = range(0, len(agg_table), max(1, len(agg_table)//10))  # adjust tick frequency
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(agg_table.index.strftime('%Y-%m')[xticks], rotation=45)
     plt.tight_layout()
     plt.show()
-    # plt.figure(figsize=(10,6))
-    # plt.stackplot(agg_table.index, agg_table.T, labels=agg_table.columns, alpha=1)
-    # plt.legend(title='Stations')
-    # plt.xlabel('Date')
-    # plt.ylabel('Counts')
-    # plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Manage the FRESCA catalog.')
