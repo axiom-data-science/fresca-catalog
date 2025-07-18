@@ -1,5 +1,6 @@
 """Builds a full Intake catalog from a base catalog file."""
 import argparse
+import asyncio
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -13,8 +14,8 @@ import hvplot.pandas
 from intake import Catalog
 from intake.readers import CSV, PandasCSV
 from intake_erddap import ERDDAPCatalogReader, TableDAPReader
-import matplotlib.pyplot as plt
-from matplotlib import colors
+from IPython.display import display, clear_output
+import ipywidgets as w
 import pandas as pd
 import seaborn as sns
 from matplotlib.colors import LogNorm
@@ -318,6 +319,43 @@ def filter_catalog(
         add_entry_to_catalog(filtered_catalog, catalog[entry_name], entry_name)
     
     return filtered_catalog
+
+def build_entries_selector(catalog):
+    sel  = w.SelectMultiple(options=list(catalog.entries.keys()))
+    apply = w.Button(description="Apply")
+    out  = w.Output()
+    box  = w.VBox([sel, apply, out])
+
+    def _apply(_):
+        entry_names = list(sel.value)
+        box.result = filter_catalog(catalog, entry_names=entry_names)
+        sel.close(); apply.close()
+        with out:
+            clear_output()
+            print(f"Entries selected: {', '.join(entry_names)}")
+
+    apply.on_click(_apply)
+    display(box)
+    return box
+
+def build_variables_selector(catalog):
+    all_variables = sorted(get_all_catalog_variables(catalog), key=str.lower)
+    sel  = w.SelectMultiple(options=list(all_variables))
+    apply = w.Button(description="Apply")
+    out  = w.Output()
+    box  = w.VBox([sel, apply, out])
+
+    def _apply(_):
+        variables = list(sel.value)
+        box.result = filter_catalog(catalog, variables=variables)
+        sel.close(); apply.close()
+        with out:
+            clear_output()
+            print(f"Variables selected: {', '.join(variables)}")
+
+    apply.on_click(_apply)
+    display(box)
+    return box
 
 def build_agg_table( catalog: Catalog) -> pd.DataFrame:
 
