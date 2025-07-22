@@ -1,11 +1,12 @@
 """Builds a full Intake catalog from a base catalog file."""
 import argparse
-import asyncio
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Union
 import yaml
+
+import panel as pn
 
 import contextily as ctx
 import geopandas as gpd
@@ -23,7 +24,10 @@ from shapely.geometry import box, Polygon, Point
 from rapidfuzz import fuzz, process
 
 import holoviews as hv
+
 hv.extension('bokeh')
+
+pn.extension()
 
 def get_erddap_dataset_variables(server_url: str, dataset_id: str) -> List[str]:
     """Gets the list of variables in an ERDDAP dataset.
@@ -241,6 +245,18 @@ def to_dt(s: str) -> datetime:
     """
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
 
+def get_full_time_range(catalog):
+    min_time, max_time = None, None
+    for entry_name in catalog.entries.keys():
+        entry = catalog[entry_name]
+        entry_min_time = to_dt(entry.metadata['minTime'])
+        if not min_time or entry_min_time < min_time:
+            min_time = entry_min_time
+        entry_max_time = to_dt(entry.metadata['maxTime'])
+        if not max_time or entry_max_time > max_time:
+            max_time = entry_max_time
+    return min_time, max_time
+
 def filter_catalog(
         catalog: Catalog,
         entry_names: List[str] = None,
@@ -356,6 +372,45 @@ def build_variables_selector(catalog):
     apply.on_click(_apply)
     display(box)
     return box
+
+DAY_MS = 24 * 60 * 60 * 1000
+
+import ipywidgets as w
+from IPython.display import display, clear_output
+from datetime import datetime, timedelta
+
+def build_time_range_selector(catalog):
+    start_dt, end_dt = get_full_time_range(catalog)
+
+    # one entry per calendar day
+    n_days  = (end_dt.date() - start_dt.date()).days
+    dates   = [start_dt + timedelta(days=i) for i in range(n_days + 1)]
+
+    slider = w.SelectionRangeSlider(
+        options       = dates,                    # discrete stops
+        index         = (0, len(dates) - 1),      # full span pre‑selected
+        description   = "Date range",
+        continuous_update = False,                # reduce noise
+        layout        = {'width': '500px'}
+    )
+
+    apply  = w.Button(description="Apply")
+    out    = w.Output()
+    box    = w.VBox([slider, apply, out])         # mirror variable selector
+
+    def _apply(_):
+        start, end = slider.value
+        time_range = (start.isoformat() + "Z", end.isoformat() + "Z")
+        box.result = filter_catalog(catalog, time_range=time_range)
+        slider.close(); apply.close()
+        with out:
+            clear_output()
+            print(f"Time range selected: {start:%Y‑%m‑%d} to {end:%Y‑%m‑%d}")
+
+    apply.on_click(_apply)
+    display(box)
+    return box
+
 
 def build_agg_table( catalog: Catalog) -> pd.DataFrame:
 

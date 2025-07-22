@@ -9,6 +9,7 @@ dependencies:
   - h3-py
   - hvplot
   - intake
+  - jupyter_bokeh
   - jupyterlab
   - panel
   - pip
