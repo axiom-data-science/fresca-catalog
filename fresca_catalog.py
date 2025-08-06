@@ -321,7 +321,7 @@ def filter_catalog(
     
     return filtered_catalog
 
-def build_agg_table( catalog: Catalog) -> pd.DataFrame:
+def build_agg_table(catalog: Catalog) -> pd.DataFrame:
 
     base_cols = ['date', 'cruise_id', 'station', 'event_n', 'latitude', 'longitude']
     entry_names = list(catalog.entries.keys())
@@ -398,6 +398,7 @@ def build_agg_table( catalog: Catalog) -> pd.DataFrame:
 
 def plot_map(
     catalog: Catalog,
+    metric: str = "mean",
     time_bin: str = "D",
     log: bool = False
 ):
@@ -425,7 +426,8 @@ def plot_map(
         agg_table = agg_table.set_index('date')
         agg_table = agg_table.groupby(['station', 'geometry']).resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
         var_cols = agg_table.columns.difference(base_cols)
-        agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
+        if metric == 'mean':
+            agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
         agg_table['event_n'] = 1
 
     # Divide all non-base columns by the value in the event_n column and then drop the event_n column
@@ -433,20 +435,23 @@ def plot_map(
         if col not in base_cols and agg_table[col].dtype in ['int64', 'float64']:
             agg_table[col] = agg_table[col] / agg_table['event_n']
     agg_table.drop(columns=['event_n'], inplace=True)
-
-    agg_table = agg_table.groupby(['station', 'geometry']).mean(numeric_only=True).reset_index()
-    agg_table['completeness'] = agg_table.mean(numeric_only=True, axis=1)
+    if metric == 'mean':
+        agg_table = agg_table.groupby(['station', 'geometry']).mean(numeric_only=True).reset_index()
+        agg_table[metric] = agg_table.mean(numeric_only=True, axis=1)
+    elif metric == 'sum':
+        agg_table = agg_table.groupby(['station', 'geometry']).sum(numeric_only=True).reset_index()
+        agg_table[metric] = agg_table.sum(numeric_only=True, axis=1)
     agg_table = gpd.GeoDataFrame(agg_table)
     agg_table = agg_table.set_crs(epsg=4326)
-    agg_table = agg_table[['station', 'geometry', 'completeness']]
+    agg_table = agg_table[['station', 'geometry', metric]]
 
     plot = agg_table.hvplot.points(
-        c='completeness',
+        c=metric,
         cmap='viridis',
         logz=log,
         geo=True,
         tiles='OSM',
-        hover_cols=['station', 'completeness'],
+        hover_cols=['station', metric],
         width=800,
         height=600
     )
@@ -455,6 +460,7 @@ def plot_map(
 
 def plot_grid(
     catalog: Catalog,
+    metric: str = 'mean',
     stations: List[str] = None,
     log: bool = False,
     time_bin: str = "D"
@@ -480,7 +486,7 @@ def plot_grid(
     base_cols= ['date', 'station', 'event_n']
 
     if not hasattr(catalog, 'agg_table'):
-        catalog.agg_table = build_agg_table(catalog, variables)
+        catalog.agg_table = build_agg_table(catalog)
     
     agg_table = deepcopy(catalog.agg_table)
     agg_table.drop(columns=['geometry'], inplace=True)
@@ -490,23 +496,12 @@ def plot_grid(
             stations = [stations]
         agg_table = agg_table[agg_table['station'].isin(stations)]
     
-
-    if stations:
-        if isinstance(stations, str):
-            stations = [stations]
-        agg_table = agg_table[agg_table['station'].isin(stations)]
-    
-
-    if stations:
-        if isinstance(stations, str):
-            stations = [stations]
-        agg_table = agg_table[agg_table['station'].isin(stations)]
-    
     if time_bin != "D":
         agg_table = agg_table.set_index('date')
         agg_table = agg_table.groupby('station').resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
         var_cols = agg_table.columns.difference(base_cols)
-        agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
+        if metric == 'mean':
+            agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
         agg_table['event_n'] = 1
 
     # Divide all non-base columns by the value in the event_n column and then drop the event_n column
@@ -515,16 +510,25 @@ def plot_grid(
             agg_table[col] = agg_table[col] / agg_table['event_n']
     agg_table.drop(columns=['event_n'], inplace=True)
 
-    agg_table = agg_table.groupby('station').mean(numeric_only=True).reset_index()
+    if metric == 'mean':
+        agg_table = agg_table.groupby('station').mean(numeric_only=True).reset_index()
+    elif metric == 'sum':
+        agg_table = agg_table.groupby('station').sum(numeric_only=True).reset_index()
+
     agg_table = agg_table.set_index('station')
+
+    fig_height = len(agg_table) * 0.5
+    fig_width = len(agg_table.columns) * 0.5
+    
     import matplotlib.pyplot as plt
-    # plt.figure(figsize=(10, 60))
-    plt.yticks(ticks=range(agg_table.shape[0]), labels=agg_table.index, rotation=0)
+    plt.figure(figsize=(fig_width, fig_height))
+    plt.yticks(ticks=range(agg_table.shape[0]), labels=agg_table.index, rotation=90)
     sns.heatmap(agg_table, cmap='viridis', norm=norm)
     plt.show()
 
 def plot_timeseries(
     catalog: Catalog,
+    metric: str = 'mean',
     stations: List[str] = None,
     variables: List[str] = None,
     log: bool = False,
@@ -546,7 +550,7 @@ def plot_timeseries(
     base_cols= ['date', 'station', 'event_n']
 
     if not hasattr(catalog, 'agg_table'):
-        catalog.agg_table = build_agg_table(catalog, variables)
+        catalog.agg_table = build_agg_table(catalog)
     
     agg_table = deepcopy(catalog.agg_table)
     agg_table.drop(columns=['geometry'], inplace=True)
@@ -562,7 +566,8 @@ def plot_timeseries(
         agg_table = agg_table.set_index('date')
         agg_table = agg_table.groupby('station').resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
         var_cols = agg_table.columns.difference(base_cols)
-        agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
+        if metric == 'mean':
+            agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
         agg_table['event_n'] = 1
 
     # Divide all non-base columns by the value in the event_n column and then drop the event_n column
@@ -572,17 +577,21 @@ def plot_timeseries(
     agg_table.drop(columns=['event_n'], inplace=True)
 
     if len(stations) > 1:
-        agg_table['completeness'] = agg_table.mean(numeric_only=True, axis=1)
-        agg_table['completeness'] /= len(stations)
-        agg_table = agg_table[['date', 'station', 'completeness']].pivot(index='date', columns='station')
+        if metric == 'mean':
+            agg_table[metric] = agg_table.mean(numeric_only=True, axis=1)
+            agg_table[metric] /= len(stations)
+        elif metric == 'sum':
+            agg_table[metric] = agg_table.max(numeric_only=True, axis=1)  # max bc we don't want to double count visits
+        agg_table = agg_table[['date', 'station', metric]].pivot(index='date', columns='station')
         agg_table.columns = agg_table.columns.droplevel(0)
         agg_table.columns.name = None
 
     else:
         agg_table = agg_table.drop(columns=['station'])
         agg_table = agg_table.set_index('date')
-        for col in agg_table.columns:
-            agg_table[col] = agg_table[col] / len(agg_table.columns)
+        if metric == 'mean':
+            for col in agg_table.columns:
+                agg_table[col] = agg_table[col] / len(agg_table.columns)
 
     import matplotlib.pyplot as plt
     ax = agg_table.plot(kind='bar', stacked=True, logy=log, width=1.0)
