@@ -411,8 +411,21 @@ def build_time_range_selector(catalog):
     display(box)
     return box
 
+def build_bbox_selector(catalog: Catalog):
+    if not hasattr(catalog, 'agg_table'):
+        catalog.agg_table = build_agg_table(catalog)
+    
+    plot = catalog._agg_table.hvplot.points(
+        geo=True,
+        tiles='OSM',
+        hover_cols=['station'],
+        width=800,
+        height=600
+    )
+    from IPython.display import display
+    display(plot)
 
-def build_agg_table( catalog: Catalog) -> pd.DataFrame:
+def build_agg_table(catalog: Catalog) -> pd.DataFrame:
 
     base_cols = ['date', 'cruise_id', 'station', 'event_n', 'latitude', 'longitude']
     entry_names = list(catalog.entries.keys())
@@ -436,6 +449,8 @@ def build_agg_table( catalog: Catalog) -> pd.DataFrame:
         lon_col = 'longitude'
         lat_col = 'latitude'
 
+        # Add something here that makes this bit optional since
+        # it won't always exist (it's a product of `filter_catalog`)
         for v in catalog.metadata['variables']:
             if v in df.columns:
                 cols_to_keep.append(v)
