@@ -1,6 +1,13 @@
+from copy import deepcopy
+from datetime import timedelta
+
+from bokeh.models import BoxSelectTool
+import geopandas as gpd
+import holoviews as hv
+from holoviews import streams
 import ipywidgets as w
 from IPython.display import display, clear_output
-from datetime import timedelta
+import panel as pn
 
 from .catalog import (
     filter_catalog,
@@ -79,16 +86,54 @@ def build_time_range_selector(catalog):
     display(box)
     return box
 
-def build_bbox_selector(catalog: Catalog):
+import holoviews as hv
+import hvplot.pandas
+import panel as pn
+from bokeh.models import BoxSelectTool
+from copy import deepcopy
+from IPython.display import display
+
+def build_bbox_selector(catalog):
     if not hasattr(catalog, 'agg_table'):
         catalog.agg_table = build_agg_table(catalog)
-    
-    plot = catalog._agg_table.hvplot.points(
-        geo=True,
-        tiles='OSM',
+
+    agg = deepcopy(catalog.agg_table)[['station','geometry']]
+    agg = agg.groupby(['station','geometry']).sum().reset_index()
+    agg = gpd.GeoDataFrame(agg)
+    agg['lon'] = agg.geometry.x
+    agg['lat'] = agg.geometry.y
+
+    # Plot points with box_select
+    points = agg.hvplot.points(
+        x='lon', y='lat', geo=True,
         hover_cols=['station'],
-        width=800,
-        height=600
+        width=800, height=600,
+        tools=['hover','reset','pan','wheel_zoom','box_select'],
+        active_tools=['pan']
     )
-    from IPython.display import display
-    display(plot)
+    tiles = hv.element.tiles.OSM().opts(alpha=0.8, width=800, height=600)
+    overlay = tiles * points
+
+    # selection stream
+    selection = streams.Selection1D(source=points)
+
+    apply_btn = pn.widgets.Button(name="Apply", button_type="primary")
+    status    = pn.pane.Markdown("")
+    widgetbox = pn.Column(overlay, apply_btn, status)
+    widgetbox.result = None
+
+    def _apply(_):
+        inds = selection.index
+        if not inds:
+            status.object = "⚠️ Use the **Box Select** tool (dashed square) to select stations."
+            return
+        selected = agg.iloc[inds]
+        xmin, ymin, xmax, ymax = selected.total_bounds
+        bbox = [xmin, ymin, xmax, ymax]
+        widgetbox.result = bbox
+        status.object = f"✅ bbox = {bbox}"
+        apply_btn.disabled = True
+
+    apply_btn.on_click(_apply)
+    display(widgetbox)
+    return widgetbox

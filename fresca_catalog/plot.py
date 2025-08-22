@@ -4,7 +4,7 @@ from shapely.geometry import Point
 from copy import deepcopy
 from typing import List
 
-from .catalog import Catalog
+from .catalog import Catalog, get_all_catalog_variables
 
 import seaborn as sns
 from matplotlib.colors import LogNorm
@@ -33,8 +33,9 @@ def build_agg_table(catalog: Catalog) -> pd.DataFrame:
         lon_col = 'longitude'
         lat_col = 'latitude'
 
-        # Add something here that makes this bit optional since
-        # it won't always exist (it's a product of `filter_catalog`)
+        if 'variables' not in catalog.metadata:
+            catalog.metadata['variables'] = get_all_catalog_variables(catalog)
+
         for v in catalog.metadata['variables']:
             if v in df.columns:
                 cols_to_keep.append(v)
@@ -56,6 +57,8 @@ def build_agg_table(catalog: Catalog) -> pd.DataFrame:
     df = df[df['date'].between(start, end)]
 
     var_cols = df.columns.difference(base_cols)
+    import numpy as np
+    var_cols = [c for c in var_cols if np.issubdtype(df[c].dtype, np.number)]
     df[var_cols] = (df[var_cols] > 0).astype(int)
 
     # Collapse points down to per-station centroid
