@@ -1,7 +1,7 @@
+"""Selector widgets for filtering a FRESCA catalog."""
 from copy import deepcopy
 from datetime import timedelta
 
-from bokeh.models import BoxSelectTool
 import geopandas as gpd
 import holoviews as hv
 from holoviews import streams
@@ -10,14 +10,26 @@ from IPython.display import display, clear_output
 import panel as pn
 
 from .catalog import (
+    Catalog,
     filter_catalog,
     get_full_time_range,
-    get_all_catalog_variables,
-    Catalog
+    get_all_catalog_variables
 )
-from .plot import build_agg_table
+from .utils import build_agg_table
 
-def build_entries_selector(catalog):
+def build_entries_selector(catalog: Catalog) -> w.VBox:
+    """Builds a widget for selecting catalog entries.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog to build the selector for.
+    
+    Returns
+    -------
+    ipywidgets.VBox
+        A widget containing the selector.
+    """
     sel  = w.SelectMultiple(options=list(catalog.entries.keys()))
     apply = w.Button(description="Apply")
     out  = w.Output()
@@ -35,7 +47,19 @@ def build_entries_selector(catalog):
     display(box)
     return box
 
-def build_variables_selector(catalog):
+def build_variables_selector(catalog: Catalog) -> w.VBox:
+    """Builds a widget for selecting catalog variables.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog to build the selector for.
+
+    Returns
+    -------
+    ipywidgets.VBox
+        A widget containing the selector.
+    """
     all_variables = sorted(get_all_catalog_variables(catalog), key=str.lower)
     sel  = w.SelectMultiple(options=list(all_variables))
     apply = w.Button(description="Apply")
@@ -54,7 +78,19 @@ def build_variables_selector(catalog):
     display(box)
     return box
 
-def build_time_range_selector(catalog):
+def build_time_range_selector(catalog: Catalog) -> w.VBox:
+    """Builds a widget for selecting a time range.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog to build the selector for.
+
+    Returns
+    -------
+    ipywidgets.VBox
+        A widget containing the selector.
+    """
     start_dt, end_dt = get_full_time_range(catalog)
 
     # one entry per calendar day
@@ -86,14 +122,19 @@ def build_time_range_selector(catalog):
     display(box)
     return box
 
-import holoviews as hv
-import hvplot.pandas
-import panel as pn
-from bokeh.models import BoxSelectTool
-from copy import deepcopy
-from IPython.display import display
-
-def build_bbox_selector(catalog):
+def build_bbox_selector(catalog: Catalog) -> pn.Column:
+    """Builds a widget for selecting a bounding box.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog to build the selector for.
+    
+    Returns
+    -------
+    panel.Column
+        A widget containing the selector.
+    """
     if not hasattr(catalog, 'agg_table'):
         catalog.agg_table = build_agg_table(catalog)
 

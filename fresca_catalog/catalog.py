@@ -1,31 +1,18 @@
 """Builds a full Intake catalog from a base catalog file."""
 import argparse
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Union
 import yaml
 
-import panel as pn
-
-import contextily as ctx
-import geopandas as gpd
-import h3
-import hvplot.pandas
+import holoviews as hv
 from intake import Catalog
 from intake.readers import CSV, PandasCSV
 from intake_erddap import ERDDAPCatalogReader, TableDAPReader
-from IPython.display import display, clear_output
-import ipywidgets as w
 import pandas as pd
-import seaborn as sns
-from matplotlib.colors import LogNorm
-from shapely.geometry import box, Polygon, Point
+import panel as pn
+from shapely.geometry import box
 from rapidfuzz import fuzz, process
-
-from pandas import DataFrame
-
-import holoviews as hv
 
 hv.extension('bokeh')
 
@@ -247,7 +234,7 @@ def to_dt(s: str) -> datetime:
     """
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
 
-def get_full_time_range(catalog):
+def get_full_time_range(catalog: Catalog) -> Tuple[datetime, datetime]:
     min_time, max_time = None, None
     for entry_name in catalog.entries.keys():
         entry = catalog[entry_name]
@@ -337,7 +324,6 @@ def filter_catalog(
         add_entry_to_catalog(filtered_catalog, catalog[entry_name], entry_name)
     
     return filtered_catalog
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Manage the FRESCA catalog.')

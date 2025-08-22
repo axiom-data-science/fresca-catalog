@@ -1,3 +1,4 @@
+"""Summary utilities for the Fresca catalog."""
 import pandas as pd
 from pandas import DataFrame
 from IPython.display import display
@@ -5,6 +6,13 @@ from IPython.display import display
 from fresca_catalog.catalog import Catalog
 
 def summarize_catalog(catalog: Catalog) -> None:
+    """Summarizes the datasets in the catalog.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog to summarize.
+    """
     data = {
         'dataset': [],
         'date_start': [],
@@ -34,7 +42,16 @@ def summarize_catalog(catalog: Catalog) -> None:
     df = DataFrame(data)
     display(df)
 
-def summarize_entry_variables(catalog, entry_name):
+def summarize_entry_variables(catalog: Catalog, entry_name: str) -> None:
+    """Summarizes the variables in a catalog entry.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog containing the entry.
+    entry_name : str
+        The name of the entry to summarize.
+    """
     data = {
         'variable': [],
         'date_start': [],
@@ -79,7 +96,18 @@ def summarize_entry_variables(catalog, entry_name):
 
     display(DataFrame(data))
 
-def summarize_entry_stations(catalog, entry_name, show_all=False):
+def summarize_entry_stations(catalog: Catalog, entry_name: str, show_all: bool = False) -> None:
+    """Summarizes the stations in a catalog entry.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog containing the entry.
+    entry_name : str
+        The name of the entry to summarize.
+    show_all : bool, optional
+        Whether or not to show all rows in the output, by default False.
+    """
     data = {
         'station': [],
         'date_start': [],
@@ -100,8 +128,6 @@ def summarize_entry_stations(catalog, entry_name, show_all=False):
         lon_col = next(c for c in df.columns if 'longitude' in c)
         lat_col = next(c for c in df.columns if 'latitude' in c)
 
-    base_cols = ['date', 'cruise_id', 'station', 'depth', 'event_n', lon_col, lat_col]
-
     df = catalog[entry_name].read()
 
     stations = df['station'].unique()
@@ -111,7 +137,7 @@ def summarize_entry_stations(catalog, entry_name, show_all=False):
         data['date_start'].append(stn_df['date'].min())
         data['date_end'].append(stn_df['date'].max())
         data['lon'].append(stn_df[lon_col].mean())
-        data['lat'].append(stn_df[lon_col].mean())
+        data['lat'].append(stn_df[lat_col].mean())
         data['total_casts'].append(len(stn_df['date'].drop_duplicates()))
         data['max_depths'].append(stn_df['depth'].max())
         data['median_depths'].append(int(stn_df['depth'].median()))
