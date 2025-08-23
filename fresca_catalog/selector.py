@@ -93,30 +93,29 @@ def build_time_range_selector(catalog: Catalog) -> w.VBox:
     """
     start_dt, end_dt = get_full_time_range(catalog)
 
-    # one entry per calendar day
-    n_days  = (end_dt.date() - start_dt.date()).days
-    dates   = [start_dt + timedelta(days=i) for i in range(n_days + 1)]
+    n_days = (end_dt.date() - start_dt.date()).days
+    dates  = [start_dt + timedelta(days=i) for i in range(n_days + 1)]
 
     slider = w.SelectionRangeSlider(
-        options       = dates,
-        index         = (0, len(dates) - 1),
-        description   = "Date range",
-        continuous_update = False,
-        layout        = {'width': '500px'}
+        options=[(d.strftime("%Y-%m-%d"), d) for d in dates],
+        index=(0, len(dates) - 1),
+        description="Date range",
+        continuous_update=False,
+        layout={'width': '500px'}
     )
 
-    apply  = w.Button(description="Apply")
-    out    = w.Output()
-    box    = w.VBox([slider, apply, out])
+    apply = w.Button(description="Apply")
+    out   = w.Output()
+    box   = w.VBox([slider, apply, out])
 
     def _apply(_):
         start, end = slider.value
-        time_range = (start.isoformat() + "Z", end.isoformat() + "Z")
-        box.result = filter_catalog(catalog, time_range=time_range)
+        # Just store the range as list of ISO8601 strings
+        box.result = [start.isoformat() + "Z", end.isoformat() + "Z"]
         slider.close(); apply.close()
         with out:
             clear_output()
-            print(f"Time range selected: {start:%Y‑%m‑%d} to {end:%Y‑%m‑%d}")
+            print(f"Selected: {start:%Y-%m-%d} → {end:%Y-%m-%d}")
 
     apply.on_click(_apply)
     display(box)
