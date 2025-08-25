@@ -187,8 +187,8 @@ def search_catalog_variables(catalog, query=None, case_insensitive=True, fuzzy=F
     ----------
     catalog : Catalog
         The catalog to search.
-    query : str, optional
-        The query to search for. If not provided, all variables are returned.
+    query : str or list, optional
+        The query or list of queries to search for. If None, returns all variables. Default is None.
     case_insensitive : bool, optional
         Whether to perform a case-insensitive search. Default is True.
     fuzzy : bool, optional
@@ -203,21 +203,33 @@ def search_catalog_variables(catalog, query=None, case_insensitive=True, fuzzy=F
 
     if not query:
         return sorted(all_variables, key=str.lower)
-    
-    if fuzzy:
-        processor = None
-        if case_insensitive:
-            query = query.lower()
-            processor = lambda x: x.lower()
-        results = process.extract(query, all_variables, scorer=fuzz.WRatio, score_cutoff=70, processor=processor)
-        matching_variables = [variable for variable, _, _ in results]
-    else:
-        if case_insensitive:
-            matching_variables = [v for v in all_variables if query.lower() in v.lower()]
-        else:
-            matching_variables = [v for v in all_variables if query in v]
 
-    return sorted(matching_variables, key=str.lower)
+    if isinstance(query, str):
+        queries = [q.strip() for q in query.split("|")]
+    else:
+        queries = list(query)
+
+    matches = set()
+    for q in queries:
+        if not q:
+            continue
+        if fuzzy:
+            processor = None
+            q_proc = q
+            if case_insensitive:
+                q_proc = q.lower()
+                processor = lambda x: x.lower()
+            results = process.extract(
+                q_proc, all_variables, scorer=fuzz.WRatio, score_cutoff=70, processor=processor
+            )
+            matches.update(variable for variable, _, _ in results)
+        else:
+            if case_insensitive:
+                matches.update(v for v in all_variables if q.lower() in v.lower())
+            else:
+                matches.update(v for v in all_variables if q in v)
+
+    return sorted(matches, key=str.lower)
 
 def to_dt(s: str) -> datetime:
     """Converts a string to a datetime object.
