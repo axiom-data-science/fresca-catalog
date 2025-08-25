@@ -5,6 +5,7 @@ from datetime import timedelta
 import geopandas as gpd
 import holoviews as hv
 from holoviews import streams
+import hvplot.pandas  # noqa: F401
 import ipywidgets as w
 from IPython.display import display, clear_output
 import panel as pn
@@ -37,7 +38,7 @@ def build_entries_selector(catalog: Catalog) -> w.VBox:
 
     def _apply(_):
         entry_names = list(sel.value)
-        box.result = filter_catalog(catalog, entry_names=entry_names)
+        box.result = entry_names
         sel.close(); apply.close()
         with out:
             clear_output()
@@ -68,7 +69,7 @@ def build_variables_selector(catalog: Catalog) -> w.VBox:
 
     def _apply(_):
         variables = list(sel.value)
-        box.result = filter_catalog(catalog, variables=variables)
+        box.result = variables
         sel.close(); apply.close()
         with out:
             clear_output()
@@ -115,7 +116,7 @@ def build_time_range_selector(catalog: Catalog) -> w.VBox:
         slider.close(); apply.close()
         with out:
             clear_output()
-            print(f"Selected: {start:%Y-%m-%d} → {end:%Y-%m-%d}")
+            print(f"Time range selected: {start:%Y-%m-%d} to {end:%Y-%m-%d}")
 
     apply.on_click(_apply)
     display(box)
@@ -165,13 +166,13 @@ def build_bbox_selector(catalog: Catalog) -> pn.Column:
     def _apply(_):
         inds = selection.index
         if not inds:
-            status.object = "⚠️ Use the **Box Select** tool (dashed square) to select stations."
+            status.object = "Use the **Box Select** tool (dashed square) to select stations."
             return
         selected = agg.iloc[inds]
         xmin, ymin, xmax, ymax = selected.total_bounds
         bbox = [xmin, ymin, xmax, ymax]
         widgetbox.result = bbox
-        status.object = f"✅ bbox = {bbox}"
+        status.object = f"Bounding box selected: {bbox}"
         apply_btn.disabled = True
 
     apply_btn.on_click(_apply)
