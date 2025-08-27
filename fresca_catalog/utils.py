@@ -125,3 +125,26 @@ def merge_and_save(
     merged = merged.drop(columns=['new_key', stations_key])
     merged["date"] = merged["date"].str.split(" ").str[0]
     merged.to_csv(out_csv, index=False)
+
+def stations_from_bbox(catalog, bbox):
+    """Return station names from catalog that fall within bbox.
+    
+    Parameters
+    ----------
+    catalog : Catalog
+        The catalog with an agg_table GeoDataFrame.
+    bbox : list[float]
+        Bounding box [xmin, ymin, xmax, ymax].
+    
+    Returns
+    -------
+    list[str]
+        Station names inside the bounding box.
+    """
+    if not hasattr(catalog, 'agg_table'):
+        catalog.agg_table = build_agg_table(catalog)
+    
+    agg = catalog.agg_table
+    xmin, ymin, xmax, ymax = bbox
+    within = agg.cx[xmin:xmax, ymin:ymax]
+    return within['station'].unique().tolist()
