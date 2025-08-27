@@ -1,7 +1,15 @@
 aliases:
   all_ctd: all_ctd
+  carbonate: carbonate
   sfer: sfer
 data:
+  259b77110947170d:
+    datatype: intake.readers.datatypes:CSV
+    kwargs:
+      storage_options: null
+      url: datasets/carbonate.csv
+    metadata: {}
+    user_parameters: {}
   9a1a504a37c1e69e:
     datatype: intake.readers.datatypes:CSV
     kwargs:
@@ -55,6 +63,40 @@ entries:
       - altimeter
       - latitude
       - longitude
+    output_instance: pandas:DataFrame
+    reader: intake.readers.readers:PandasCSV
+    user_parameters: {}
+  carbonate:
+    kwargs:
+      args:
+      - '{data(259b77110947170d)}'
+    metadata:
+      lat_col: Latitude
+      lon_col: Longitude
+      maxLatitude: 25.6525833333333
+      maxLongitude: -80.0441666666667
+      maxTime: '2024-03-08T00:00:00Z'
+      minLatitude: 24.3931666666667
+      minLongitude: -81.8339265
+      minTime: '2010-03-08T00:00:00Z'
+      time_col: date
+      variables:
+      - date
+      - cruise_id
+      - station
+      - event_n
+      - DIC_umol_kg
+      - TA_umol_kg
+      - pH_measured
+      - pH_calculated
+      - pCO2_uatm
+      - Aragonite_Sat_W
+      - Salinity_Bottle
+      - Temperature_C
+      - Pressure_db
+      - CTDID
+      - Latitude
+      - Longitude
     output_instance: pandas:DataFrame
     reader: intake.readers.readers:PandasCSV
     user_parameters: {}

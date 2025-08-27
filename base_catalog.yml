@@ -8,3 +8,8 @@
   time_col: date
   type: csv
   url: datasets/sfer.csv
+- lat_col: Latitude
+  lon_col: Longitude
+  time_col: date
+  type: csv
+  url: datasets/carbonate.csv
