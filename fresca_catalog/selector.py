@@ -149,9 +149,9 @@ def build_bbox_selector(catalog: Catalog) -> pn.Column:
         x='lon', y='lat', geo=True,
         hover_cols=['station'],
         width=800, height=600,
-        tools=['hover','reset','pan','wheel_zoom','box_select'],
-        active_tools=['pan']
+        tools=['hover','reset','pan','wheel_zoom','box_select']
     )
+    points = points.opts(active_tools=['pan'])
     tiles = hv.element.tiles.OSM().opts(alpha=0.8, width=800, height=600)
     overlay = tiles * points
 
