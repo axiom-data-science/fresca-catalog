@@ -95,3 +95,32 @@ def build_agg_table(catalog: Catalog) -> pd.DataFrame:
     gdf = gdf[gdf.geometry.apply(lambda g: g.is_valid if g else False)]
 
     return gdf
+
+def merge_and_save(
+        counts_url: str,
+        stations_url: str,
+        counts_key: str,
+        stations_key: str,
+        out_csv: str
+    ) -> None:
+    """
+    Merge two dataframes (counts and stations) to attach station latitude and longitude from the stations CSV.
+
+    Parameters
+    ----------
+    counts_url : str
+        URL or filepath to the counts CSV.
+    stations_url : str
+        URL or filepath to the stations CSV containing latitude and longitude.
+    counts_key : str
+        Column in counts dataframe to join on.
+    stations_key : str
+        Column in stations dataframe to join on.
+    out_csv : str
+        Path to save merged CSV.
+    """
+    counts = pd.read_csv(counts_url)
+    stations = pd.read_csv(stations_url)
+    merged = counts.merge(stations, left_on=counts_key, right_on=stations_key, how="inner")
+    merged = merged.drop(columns=[stations_key])
+    merged.to_csv(out_csv, index=False)
