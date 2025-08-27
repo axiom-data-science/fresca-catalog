@@ -122,5 +122,5 @@ def merge_and_save(
     counts = pd.read_csv(counts_url)
     stations = pd.read_csv(stations_url)
     merged = counts.merge(stations, left_on=counts_key, right_on=stations_key, how="inner")
-    merged = merged.drop(columns=[stations_key])
+    merged = merged.drop(columns=['new_key', stations_key])
     merged.to_csv(out_csv, index=False)
