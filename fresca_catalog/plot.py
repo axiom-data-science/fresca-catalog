@@ -35,10 +35,12 @@ def plot_map(
         catalog.agg_table = build_agg_table(catalog)
     
     agg_table = deepcopy(catalog.agg_table)
+    
+    num_cols = list(agg_table.select_dtypes(include="number").columns)
 
     if time_bin != "D":
         agg_table = agg_table.set_index('date')
-        agg_table = agg_table.groupby(['station', 'geometry']).resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
+        agg_table = agg_table.groupby(['station', 'geometry']).resample(time_bin)[num_cols].sum().fillna(0).reset_index()
         var_cols = agg_table.columns.difference(base_cols)
         if metric == 'mean':
             agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
@@ -48,13 +50,16 @@ def plot_map(
     for col in agg_table.columns:
         if col not in base_cols and agg_table[col].dtype in ['int64', 'float64']:
             agg_table[col] = agg_table[col] / agg_table['event_n']
+    
     agg_table.drop(columns=['event_n'], inplace=True)
+    num_cols.remove('event_n')
+    
     if metric == 'mean':
-        agg_table = agg_table.groupby(['station', 'geometry']).mean(numeric_only=True).reset_index()
-        agg_table[metric] = agg_table.mean(numeric_only=True, axis=1)
+        agg_table = agg_table.groupby(['station', 'geometry'])[num_cols].mean().reset_index()
+        agg_table[metric] = agg_table[num_cols].mean(axis=1)
     elif metric == 'sum':
-        agg_table = agg_table.groupby(['station', 'geometry']).sum(numeric_only=True).reset_index()
-        agg_table[metric] = agg_table.sum(numeric_only=True, axis=1)
+        agg_table = agg_table.groupby(['station', 'geometry'])[num_cols].sum().reset_index()
+        agg_table[metric] = agg_table[num_cols].sum(axis=1)
     agg_table = gpd.GeoDataFrame(agg_table)
     agg_table = agg_table.set_crs(epsg=4326)
     agg_table = agg_table[['station', 'geometry', metric]]
@@ -106,6 +111,8 @@ def plot_grid(
     
     agg_table = deepcopy(catalog.agg_table)
     agg_table.drop(columns=['geometry'], inplace=True)
+
+    num_cols = list(agg_table.select_dtypes(include="number").columns)
     
     if stations:
         if isinstance(stations, str):
@@ -114,7 +121,7 @@ def plot_grid(
     
     if time_bin != "D":
         agg_table = agg_table.set_index('date')
-        agg_table = agg_table.groupby('station').resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
+        agg_table = agg_table.groupby('station').resample(time_bin)[num_cols].sum().fillna(0).reset_index()
         var_cols = agg_table.columns.difference(base_cols)
         if metric == 'mean':
             agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
@@ -125,11 +132,12 @@ def plot_grid(
         if col not in base_cols and agg_table[col].dtype in ['int64', 'float64']:
             agg_table[col] = agg_table[col] / agg_table['event_n']
     agg_table.drop(columns=['event_n'], inplace=True)
+    num_cols.remove('event_n')
 
     if metric == 'mean':
-        agg_table = agg_table.groupby('station').mean(numeric_only=True).reset_index()
+        agg_table = agg_table.groupby('station')[num_cols].mean().reset_index()
     elif metric == 'sum':
-        agg_table = agg_table.groupby('station').sum(numeric_only=True).reset_index()
+        agg_table = agg_table.groupby('station')[num_cols].sum().reset_index()
 
     agg_table = agg_table.set_index('station')
 
@@ -172,6 +180,8 @@ def plot_timeseries(
     agg_table = deepcopy(catalog.agg_table)
     agg_table.drop(columns=['geometry'], inplace=True)
 
+    num_cols = list(agg_table.select_dtypes(include="number").columns)
+
     if stations:
         if isinstance(stations, str):
             stations = [stations]
@@ -181,7 +191,7 @@ def plot_timeseries(
     
     if time_bin != "D":
         agg_table = agg_table.set_index('date')
-        agg_table = agg_table.groupby('station').resample(time_bin).sum(numeric_only=True).fillna(0).reset_index()
+        agg_table = agg_table.groupby('station').resample(time_bin)[num_cols].sum().fillna(0).reset_index()
         var_cols = agg_table.columns.difference(base_cols)
         if metric == 'mean':
             agg_table[var_cols] = (agg_table[var_cols] > 0).astype(int)
@@ -191,14 +201,16 @@ def plot_timeseries(
     for col in agg_table.columns:
         if col not in base_cols and agg_table[col].dtype in ['int64', 'float64']:
             agg_table[col] = agg_table[col] / agg_table['event_n']
+
     agg_table.drop(columns=['event_n'], inplace=True)
+    num_cols.remove('event_n')
 
     if len(stations) > 1:
         if metric == 'mean':
-            agg_table[metric] = agg_table.mean(numeric_only=True, axis=1)
+            agg_table[metric] = agg_table[num_cols].mean(axis=1)
             agg_table[metric] /= len(stations)
         elif metric == 'sum':
-            agg_table[metric] = agg_table.max(numeric_only=True, axis=1)  # max bc we don't want to double count visits
+            agg_table[metric] = agg_table[num_cols].max(axis=1)  # max bc we don't want to double count visits
         agg_table = agg_table[['date', 'station', metric]].pivot(index='date', columns='station')
         agg_table.columns = agg_table.columns.droplevel(0)
         agg_table.columns.name = None
