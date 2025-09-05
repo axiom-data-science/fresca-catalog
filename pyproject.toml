@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fresca-catalog"
+version = "0.1.0"
+description = "A catalog and utilities for Fresca datasets."
+authors = [
+    { name = "Trevor Golden", email = "trevor@axds.co" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/axiom-data-science/fresca-catalog"
+
+[tool.setuptools.packages.find]
+where = ["."]
