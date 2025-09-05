@@ -169,7 +169,7 @@ def build_bbox_selector(catalog: Catalog) -> pn.Column:
             status.object = "Use the **Box Select** tool (dashed square) to select stations."
             return
         selected = agg.iloc[inds]
-        xmin, ymin, xmax, ymax = selected.total_bounds
+        xmin, ymin, xmax, ymax = (float(b) for b in selected.total_bounds)
         bbox = [xmin, ymin, xmax, ymax]
         widgetbox.result = bbox
         status.object = f"Bounding box selected: {bbox}"

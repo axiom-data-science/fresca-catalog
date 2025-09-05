@@ -288,6 +288,12 @@ def filter_catalog(
     filtered_catalog = Catalog()
     filtered_catalog.metadata['time_range'] = time_range
 
+    if bbox:
+        filtered_catalog.metadata['minLongitude'] = bbox[0]
+        filtered_catalog.metadata['minLatitude'] = bbox[1]
+        filtered_catalog.metadata['maxLongitude'] = bbox[2]
+        filtered_catalog.metadata['maxLatitude'] = bbox[3]
+
     if not entry_names:
         entry_names = catalog.entries.keys()
     

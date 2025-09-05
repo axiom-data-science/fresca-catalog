@@ -94,6 +94,14 @@ def build_agg_table(catalog: Catalog) -> pd.DataFrame:
     gdf = gdf[gdf.geometry.notnull()].copy()
     gdf = gdf[gdf.geometry.apply(lambda g: g.is_valid if g else False)]
 
+    bbox_keys = ['minLongitude', 'minLatitude', 'maxLongitude', 'maxLatitude']
+    if all(k in catalog.metadata for k in bbox_keys):
+        min_x = catalog.metadata['minLongitude']
+        min_y = catalog.metadata['minLatitude']
+        max_x = catalog.metadata['maxLongitude']
+        max_y = catalog.metadata['maxLatitude']
+        gdf = gdf.cx[min_x:max_x, min_y:max_y]
+
     return gdf
 
 def merge_and_save(
