@@ -5,14 +5,18 @@ dependencies:
   - contextily
   - gdal
   - geopandas
+  - geoviews
+  - h3-py
   - hvplot
   - intake
+  - jupyter_bokeh
   - jupyterlab
   - panel
   - pip
   - python=3.10
   - rapidfuzz
   - rasterio
+  - seaborn
   - shapely
   - sqlite
   - pip:
