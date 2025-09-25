@@ -44,7 +44,7 @@ And if you prefer another IDE to JupyterLab, like Visual Studio Code, then by al
 `fresca-catalog` contains three key components to enable these use cases:
 
 - `full_catalog.yml`: The Intake catalog itself, in its on-disk YAML representation
-- `fresca_catalog.py`: The logic required for building and interacting with that Intake catalog
+- `fresca_catalog/`: The Python package containing the logic required for building and interacting with that Intake catalog
 - `base_catalog.yml`: The minimal "seed" catalog required to programmatically build the "enriched" `full_catalog.yml`
 
 We'll explore these two use cases and the components listed above in the following sections.
@@ -60,48 +60,43 @@ import intake
 catalog = intake.open_catalog('full_catalog.yml')
 ```
 
-`catalog` is just a plain vanilla Intake catalog and as such, supports anything described in the [official Intake documentation](https://intake.readthedocs.io/en/latest/index.html). But in order to make use of `catalog` for querying and filtering, we've defined a couple helper functions in `fresca_catalog.py`. These include:
+`catalog` is just a plain vanilla Intake catalog and as such, supports anything described in the [official Intake documentation](https://intake.readthedocs.io/en/latest/index.html). But in order to make use of `catalog` for querying and filtering, we've defined a variety of helper functions within `fresca_catalog`. These include functions to help facilitate:
 
-- `search_catalog_variables`
-- `filter_catalog`
+- Searching for variables of interest within the catalog
+- Selecting variables and other parameters of interest (e.g. datasets, time range, and bounding box) using interactive GUI selectors
+- Filtering the full catalog down to a subset using saved selections
+- Plotting a catalog's data availability across a variety of dimensions
 
-Details on the usage of these functions can be found in the docstrings in `fresca_catalog.py`, or by calling `help()` on either of them, for example `help(search_catalog_variables)`:
+Details on the usage of these functions can be found in `example.ipynb`, via the docstrings in `fresca_catalog`'s modules, or by calling `help()` on any function of interest. For example, to learn about how to use the funciton `search_catalog_variables`, simply run `help(search_catalog_variables)`:
 
 ```
-search_catalog_variables(
-    catalog,
-    query=None,
-    case_insensitive=True,
-    fuzzy=False
-) -> List[str]
+search_catalog_variables(catalog, query=None, case_insensitive=True, fuzzy=False) -> List[str]
     Searches the catalog for variables.
-
+    
     Parameters
     ----------
     catalog : Catalog
         The catalog to search.
-    query : str, optional
-        The query to search for. If not provided, all variables are returned.
+    query : str or list, optional
+        The query or list of queries to search for. If None, returns all variables. Default is None.
     case_insensitive : bool, optional
         Whether to perform a case-insensitive search. Default is True.
     fuzzy : bool, optional
         Whether to perform a fuzzy search. Default is False.
-
+    
     Returns
     -------
     list
         A list of matching variables.
 ```
 
-The purpose of this pair of functions is to assist in narrowing down the search to a set of datasets that will comprise a sub-catalog which can then be used for more serious scientific analysis. `search_catalog_variables` is intended to help you find all relevant variable names across the catalog. `filter_catalog` can then be used to create a sub-catalog by passing in a select list of variables, as well as temporal and spatial bounds.
-
-Say this searching and filtering results in a new catalog called `my_catalog`. Rather than needing to rebuild it everytime you want to explore it, you can simply save it to disk as a YAML file in the same way we do below with `full_catalog.yml`. For example:
+The purpose of all `fresca_catalog`'s helper functions is to assist in narrowing down the search to a set of datasets that will comprise a sub-catalog, which can then be used for more serious scientific analysis. Let's say this searching, filtering, and plotting of the full catalog results in the definition of a new catalog called `my_catalog`. Rather than needing to rebuild it everytime you want to explore it, you can simply save it to disk as a YAML file in the same way we do below with `full_catalog.yml`. For example:
 
 ```python
 my_catalog.to_yaml_file('my_catalog.yml')
 ```
 
-For more details on how to inpspect specific datset entries and read their linked data, please see `example.ipynb`
+For more details on how how to use these various selection, filtering, and plotting functions, please see `example.ipynb`.
 
 ### Rebuilding the catalog
 
@@ -122,17 +117,16 @@ The key ingredient driving this programmatic generation is `base_catalog.yml`. F
 
 `base_catalog.yml` currently support two different types of entries: `csv` types and `erddap` types. Because ERDDAP servers provide metadata in addition to the data itself, the `erddap` type entry is very minimal, requiring just the `server_url`, the `dataset_id`, and the `type`. CSVs on the other hand embed less structured metadata, and thus require a more verbose entry, specifically the addition of `lat_col`, `lon_col_`, and `time_col` to support automated metadata extraction for those columns.
 
-From this minimal `base_catalog.yml`, regenerating `full_catalog.yml` is as simple as running:
+From this minimal `base_catalog.yml`, regenerating `full_catalog.yml` is as simple as activating the environment with `conda activate fresca` and running:
 
 ```sh
-conda activate fresca
-python fresca_catalog.py build base_catalog.yml full_catalog.yml
+python -m fresca_catalog.catalog build base_catalog.yml full_catalog.yml
 ```
 
 If you're more comfortable in a Jupyter notebook, the same thing can be accomplished by running a cell with the following:
 
 ```python
-from fresca_catalog import build_catalog
+from fresca_catalog.catalog import build_catalog
 build_catalog('base_catalog.yml', 'full_catalog.yml')
 ```
 
